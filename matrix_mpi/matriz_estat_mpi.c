@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <omp.h>
+#include "mpi.h"
 
 //Quicksort adaptado de //https://www.geeksforgeeks.org/quick-sort/
 int partition (double *arr, int low, int high, int C){
@@ -216,10 +217,20 @@ void print_result(double *media, double *media_har, double *mediana,
 
 int main(int argc,char **argv){
     // 0. Definindo as variaveis do problema
+    // a. variaveis comuns
     int lin = 0, col = 0, i = 0, j = 0;
     double *matriz = NULL;
     double *mediana = NULL, *media = NULL, *media_har = NULL, *moda = NULL;
     double *variancia = NULL, *dp = NULL, *cv = NULL;
+
+    // b. variaveis mpi
+    void *buffer = NULL;
+    int count, src, dst, rank, my_rank, n_proc, root;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &n_proc);
+    printf("bs %d %d\n",my_rank,n_proc);
+    MPI_Status status;
 
     // 1. Lendo o problema de entrada
     // a. numero de linhas e colunas da matriz de entrada
@@ -241,17 +252,54 @@ int main(int argc,char **argv){
             fscanf(stdin, "%lf ",&(matriz[i*col+j]));
 
     // 2. Realizando os calculos solicitados
-    calcula_media(matriz,media,lin,col);
-    calcula_media_harmonica(matriz,media_har,lin,col);
-    ordena_colunas(matriz,lin,col);
-    calcula_mediana(matriz,mediana,lin,col);
-    calcula_moda(matriz,moda,lin,col);
-    calcula_variancia(matriz,media,variancia,lin,col);
-    calcula_desvio_padrao(variancia,dp,col);
-    calcula_coeficiente_variacao(media,dp,cv,col);
+    printf("as %d %d\n",my_rank,n_proc);
+    src = root = 0;
+    dst = 1;
+    // a. processo mestre
+    if(my_rank == 0){
+        char mst_msg[50] = "Let's start the routine!";
+        MPI_Send(mst_msg, 50, MPI_CHAR, 0, dst, MPI_COMM_WORLD);
+        printf("Master sent: %s\n",mst_msg);
+
+        /*for(rank = 1; rank < n_proc; rank++){
+            // i. aguardando mensagem desbloquente para receber resposta
+            MPI_Recv(buffer, 1, MPI_DOUBLE, MPI_ANY_SOURCE, rank, MPI_COMM_WORLD, &status);
+            
+            // ii. recebendo a resposta
+            MPI_Get_count(&status, MPI_DOUBLE, &count);
+            src = status.MPI_SOURCE;
+
+            // iii. montando resposta final
+            for(int i=0; i < count; i++)
+                vet[(src-1) + i * (n_proc-1)] = buffer[i];
+        }*/
+    }// b. processos escravos
+    else{
+        char slv_msg[50] = "oi";
+        printf("Slaves waiting for message...");
+        MPI_Recv(slv_msg, 50, MPI_CHAR, root, my_rank, MPI_COMM_WORLD, &status);
+        printf("Slaves recivied: %s\n",slv_msg);
+        /*if(rank == 1){
+            ordena_colunas(matriz,lin,col);
+
+            MPI_Send(vet, elem, MPI_FLOAT, 0, my_rank, MPI_COMM_WORLD);
+        }
+        else{
+            MPI_Recv();
+
+            calcula_media(matriz,media,lin,col);
+            calcula_media_harmonica(matriz,media_har,lin,col);
+            calcula_mediana(matriz,mediana,lin,col);
+            calcula_moda(matriz,moda,lin,col);
+
+            calcula_variancia(matriz,media,variancia,lin,col);
+            calcula_desvio_padrao(variancia,dp,col);
+            calcula_coeficiente_variacao(media,dp,cv,col);
+        }*/
+    }
 
     // 3. Imprimindo os resultados obtidos
-    print_result(media,media_har,mediana,moda,variancia,dp,cv,col);
+    //print_result(media,media_har,mediana,moda,variancia,dp,cv,col);
     
     // 4. Desalocando a memoria utilizada
     free(matriz); //Desaloca a matriz
@@ -262,4 +310,7 @@ int main(int argc,char **argv){
     free(variancia);  //Desaloca vetor de variância
     free(dp); //Desaloca vetor de desvio padrão
     free(cv); //Desaloca vetor de coeficiente de variação
+
+    // 5. Finalizando o processo MPI
+    MPI_Finalize();
 }
