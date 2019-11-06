@@ -229,7 +229,6 @@ int main(int argc,char **argv){
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &n_proc);
-    printf("bs %d %d\n",my_rank,n_proc);
     MPI_Status status;
 
     // 1. Lendo o problema de entrada
@@ -252,14 +251,20 @@ int main(int argc,char **argv){
             fscanf(stdin, "%lf ",&(matriz[i*col+j]));
 
     // 2. Realizando os calculos solicitados
-    printf("as %d %d\n",my_rank,n_proc);
     src = root = 0;
     dst = 1;
     // a. processo mestre
-    if(my_rank == 0){
+    if(my_rank == root){
+        // i. enviando mensagem para iniciar o trabalho
         char mst_msg[50] = "Let's start the routine!";
-        MPI_Send(mst_msg, 50, MPI_CHAR, 0, dst, MPI_COMM_WORLD);
-        printf("Master sent: %s\n",mst_msg);
+        MPI_Send(mst_msg, 50, MPI_CHAR, dst, my_rank, MPI_COMM_WORLD);
+        printf("Master sent: '%s'\n",mst_msg);
+
+        // ii. aguardando resposta
+        char mst_ans[50];
+        printf("Master waiting for answer...\n");
+        MPI_Recv(mst_ans, 50, MPI_CHAR, MPI_ANY_SOURCE, dst, MPI_COMM_WORLD, &status);
+        printf("Master received: '%s'\n",mst_ans);
 
         /*for(rank = 1; rank < n_proc; rank++){
             // i. aguardando mensagem desbloquente para receber resposta
@@ -273,12 +278,21 @@ int main(int argc,char **argv){
             for(int i=0; i < count; i++)
                 vet[(src-1) + i * (n_proc-1)] = buffer[i];
         }*/
-    }// b. processos escravos
+    }
+    // b. processos escravos
     else{
-        char slv_msg[50] = "oi";
-        printf("Slaves waiting for message...");
-        MPI_Recv(slv_msg, 50, MPI_CHAR, root, my_rank, MPI_COMM_WORLD, &status);
-        printf("Slaves recivied: %s\n",slv_msg);
+        // i. aguardando ordem do mestre
+        char slv_msg[50];
+        printf("Slaves waiting for message...\n");
+        MPI_Recv(slv_msg, 50, MPI_CHAR, MPI_ANY_SOURCE, root, MPI_COMM_WORLD, &status);
+        printf("Slaves received: '%s'\n",slv_msg);
+
+        // ii. respondendo para iniciar processo de calculo
+        char ok_msg[50] = "Ok, master!";
+        printf("Slaves sending confirmation...\n");
+        MPI_Send(ok_msg, 50, MPI_CHAR, root, my_rank, MPI_COMM_WORLD);
+        printf("Slaves sent: '%s'\n",ok_msg);
+
         /*if(rank == 1){
             ordena_colunas(matriz,lin,col);
 
