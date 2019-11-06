@@ -4,6 +4,11 @@
 #include <omp.h>
 #include "mpi.h"
 
+#define HI_TAG 0
+#define LINE_TAG 1
+#define COL_TAG 2
+#define MATRIX_TAG 3
+
 //Quicksort adaptado de //https://www.geeksforgeeks.org/quick-sort/
 int partition (double *arr, int low, int high, int C){
     int i, j;
@@ -282,20 +287,21 @@ int main(int argc,char **argv){
     if(my_rank == root){
         // i. enviando mensagem para iniciar o trabalho
         char mst_msg[50] = "Let's start the routine!";
-        MPI_Send(mst_msg, 50, MPI_CHAR, dst, my_rank, MPI_COMM_WORLD);
+        MPI_Send(mst_msg, 50, MPI_CHAR, dst, HI_TAG, MPI_COMM_WORLD);
         printf("Master sent: '%s'\n",mst_msg);
 
         // ii. aguardando resposta
         char mst_ans[50];
         printf("Master waiting for answer...\n");
-        MPI_Recv(mst_ans, 50, MPI_CHAR, MPI_ANY_SOURCE, dst, MPI_COMM_WORLD, &status);
+        MPI_Recv(mst_ans, 50, MPI_CHAR, dst, HI_TAG, MPI_COMM_WORLD, &status);
         printf("Master received: '%s'\n",mst_ans);
 
         // iii. enviando a matriz para ordenacao
-        printf("Master is sending the matrix to sort...\n");
-        MPI_Send(&lin, 1, MPI_INT, dst, my_rank, MPI_COMM_WORLD);
-        MPI_Send(&col, 1, MPI_INT, dst, my_rank, MPI_COMM_WORLD);
-        MPI_Send(matriz, (lin*col), MPI_DOUBLE, dst, my_rank, MPI_COMM_WORLD);
+        printf("Master is sending the matrix to sort...\n| row = %d ; col = %d ; matrix =\n",lin,col);
+        MPI_Send(&lin, 1, MPI_INT, dst, LINE_TAG, MPI_COMM_WORLD);
+        MPI_Send(&col, 1, MPI_INT, dst, COL_TAG, MPI_COMM_WORLD);
+        print_dmatrix(matriz,lin,col);
+        MPI_Send(matriz, (lin*col), MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD);
 
         /*for(rank = 1; rank < n_proc; rank++){
             // i. aguardando mensagem desbloquente para receber resposta
@@ -315,32 +321,32 @@ int main(int argc,char **argv){
     else{
         // i. aguardando ordem do mestre
         char slv_msg[50];
-        printf("Slaves waiting for message...\n");
-        MPI_Recv(slv_msg, 50, MPI_CHAR, MPI_ANY_SOURCE, root, MPI_COMM_WORLD, &status);
-        printf("Slaves received: '%s'\n",slv_msg);
+        printf("Slave %d waiting for message...\n", my_rank);
+        MPI_Recv(slv_msg, 50, MPI_CHAR, src, HI_TAG, MPI_COMM_WORLD, &status);
+        printf("Slave %d received: '%s'\n",my_rank, slv_msg);
 
         // ii. respondendo para iniciar processo de calculo
         char ok_msg[50] = "Ok, master!";
-        printf("Slaves sending confirmation...\n");
-        MPI_Send(ok_msg, 50, MPI_CHAR, root, my_rank, MPI_COMM_WORLD);
-        printf("Slaves sent: '%s'\n",ok_msg);
+        printf("Slave %d is sending confirmation...\n",my_rank);
+        MPI_Send(ok_msg, 50, MPI_CHAR, src, HI_TAG, MPI_COMM_WORLD);
+        printf("Slave %d sent: '%s'\n",my_rank, ok_msg);
 
         // iii. recebendo a matriz para ordenacao
         int l[1], c[1];
-        printf("Slaves waiting for the matrix to sort...\n");
-        MPI_Recv(l, 1, MPI_INT, MPI_ANY_SOURCE, root, MPI_COMM_WORLD, &status);
-        MPI_Recv(c, 1, MPI_INT, MPI_ANY_SOURCE, root, MPI_COMM_WORLD, &status);
+        printf("Slave %d is waiting for the matrix to sort...\n",my_rank);
+        MPI_Recv(l, 1, MPI_INT, src, LINE_TAG, MPI_COMM_WORLD, &status);
+        MPI_Recv(c, 1, MPI_INT, src, COL_TAG, MPI_COMM_WORLD, &status);
 
-        double buffer[l[0]*c[0]];
-        MPI_Recv(buffer, (l[0]*c[0]), MPI_DOUBLE, MPI_ANY_SOURCE, root, MPI_COMM_WORLD, &status);
-        printf("Slaves received:\n");
+        double *buffer = NULL;
+        buffer = (double *)malloc((l[0]*c[0])*sizeof(double));
+        MPI_Recv(buffer, (l[0]*c[0]), MPI_DOUBLE, src, MATRIX_TAG, MPI_COMM_WORLD, &status);
+        printf("Slave %d received:\n| row = %d ; col = %d ; matrix = \n",my_rank, l[0],c[0]);
         print_dmatrix(buffer,l[0],c[0]);
-
-        /*if(my_rank == 1){
-            ordena_colunas(matriz,lin,col);
-            printf("| Slave %d sorted the matrix.\n",my_rank);
-        }
-
+        /*
+        ordena_colunas(buffer,l[0],c[0]);
+        printf("| Slave %d sorted the matrix.\n",my_rank);
+        print_dmatrix(buffer,l[0],c[0]);
+        
         calcula_media(matriz,media,lin,col);
         printf("| Slave %d calculated the mean. Sending to master...\n",my_rank);
         print_dvec(media,col);
