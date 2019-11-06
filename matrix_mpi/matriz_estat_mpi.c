@@ -4,10 +4,13 @@
 #include <omp.h>
 #include "mpi.h"
 
-#define HI_TAG 0
-#define LINE_TAG 1
-#define COL_TAG 2
-#define MATRIX_TAG 3
+enum{
+    HI_TAG,
+    LINE_TAG,
+    COL_TAG,
+    MATRIX_TAG,
+    MEAN_TAG
+};
 
 //Quicksort adaptado de //https://www.geeksforgeeks.org/quick-sort/
 int partition (double *arr, int low, int high, int C){
@@ -202,7 +205,7 @@ void print_dmatrix(double *matrix, int lin, int col){
 
     for(i = 0; i < lin ; i++){
         for(j = 0 ; j < col ; j++){
-            printf("%lf ",matrix[(i*lin) + j]);
+            printf("%lf ",matrix[(i*col) + j]);
         }
         printf("\n");
     }
@@ -260,13 +263,13 @@ int main(int argc,char **argv){
     MPI_Comm_size(MPI_COMM_WORLD, &n_proc);
     MPI_Status status;
 
-    printf("Process %d of %d started.\n",my_rank,n_proc);
+    printf("Character %d of %d is on stage.\n",my_rank+1,n_proc);
     // 1. Lendo o problema de entrada
     // a. numero de linhas e colunas da matriz de entrada
     fscanf(stdin, "%d %d\n", &lin, &col); 
 
     // b. alocando memoria para as variaveis definidas
-    matriz=(double *)malloc(lin*col * sizeof(double)); //Aloca a matriz
+    matriz=(double *)malloc((lin*col) * sizeof(double)); //Aloca a matriz
     media=(double *)malloc(col * sizeof(double)); //Aloca o vetor de media
     media_har=(double *)malloc(col * sizeof(double)); //Aloca o vetor de media harmônica
     mediana=(double *)malloc(col * sizeof(double)); //Aloca o vetor de mediana
@@ -278,7 +281,7 @@ int main(int argc,char **argv){
     // c. matriz de entrada
     for(i = 0; i < lin; i++)
         for(j = 0; j < col; j++)
-            fscanf(stdin, "%lf ",&(matriz[(i*lin)+j]));
+            fscanf(stdin, "%lf ",&(matriz[i*col+j]));
 
     // 2. Realizando os calculos solicitados
     src = root = 0;
@@ -286,79 +289,109 @@ int main(int argc,char **argv){
     // a. processo mestre
     if(my_rank == root){
         // i. enviando mensagem para iniciar o trabalho
-        char mst_msg[50] = "Let's start the routine!";
+        char mst_msg[50] = "Let's wake up, son! Help your mom!";
         MPI_Send(mst_msg, 50, MPI_CHAR, dst, HI_TAG, MPI_COMM_WORLD);
-        printf("Master sent: '%s'\n",mst_msg);
+        printf("Mommy sent: '%s'\n",mst_msg);
 
         // ii. aguardando resposta
         char mst_ans[50];
-        printf("Master waiting for answer...\n");
+        printf("Mommy waiting for answer...\n");
         MPI_Recv(mst_ans, 50, MPI_CHAR, dst, HI_TAG, MPI_COMM_WORLD, &status);
-        printf("Master received: '%s'\n",mst_ans);
+        printf("Mommy heard: '%s'\n",mst_ans);
 
         // iii. enviando a matriz para ordenacao
-        printf("Master is sending the matrix to sort...\n| row = %d ; col = %d ; matrix =\n",lin,col);
+        printf("Mommy is sending a matrix to sort...\n");
         MPI_Send(&lin, 1, MPI_INT, dst, LINE_TAG, MPI_COMM_WORLD);
         MPI_Send(&col, 1, MPI_INT, dst, COL_TAG, MPI_COMM_WORLD);
-        print_dmatrix(matriz,lin,col);
-        MPI_Send(matriz, (lin*col), MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD);
+        MPI_Ssend(matriz, (lin*col), MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD);
 
-        /*for(rank = 1; rank < n_proc; rank++){
-            // i. aguardando mensagem desbloquente para receber resposta
-            MPI_Recv(buffer, 1, MPI_DOUBLE, MPI_ANY_SOURCE, rank, MPI_COMM_WORLD, &status);
-            
-            // ii. recebendo a resposta
-            MPI_Get_count(&status, MPI_DOUBLE, &count);
-            src = status.MPI_SOURCE;
+        /// iv. aguardando a matriz ordenada
+        printf("Mommy is waiting for the sorted matrix...\n");
+        MPI_Recv(matriz, (lin*col), MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD, &status);
+        printf("Mommy is received (she seems happy):\n");
 
-            // iii. montando resposta final
-        }*/
+        // v. realizando o calculo das medianas e moda
+        printf("Happy mommy helps her son to finish the tasks...\n");
+        calcula_mediana(matriz,mediana,lin,col);
+        printf("| Mommy calculated the median. \n| | ");
+        print_dvec(mediana,col); 
+
+        calcula_moda(matriz,moda,lin,col);
+        printf("| Mommy calculated the fashion. \n| | ");
+        print_dvec(moda,col);
+
+        printf("Now, Mommy is resting and waiting for her son to finish his obligations...\n");
+        MPI_Recv(media, col, MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD, &status);
+        MPI_Recv(media_har, col, MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD, &status);
+        MPI_Recv(variancia, col, MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD, &status);
+        MPI_Recv(dp, col, MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD, &status);
+        MPI_Recv(cv, col, MPI_DOUBLE, dst, MATRIX_TAG, MPI_COMM_WORLD, &status);
 
         // iii. imprimindo os resultados obtidos
-        //print_result(media,media_har,mediana,moda,variancia,dp,cv,col);
+        printf("Oh, he finished it fast. :)\n=== FINAL RESULT ===\n");
+        print_result(media,media_har,mediana,moda,variancia,dp,cv,col);
     }
     // b. processos escravos
     else{
         // i. aguardando ordem do mestre
         char slv_msg[50];
-        printf("Slave %d waiting for message...\n", my_rank);
+        printf("Son %d is sleeping...\n", my_rank);
         MPI_Recv(slv_msg, 50, MPI_CHAR, src, HI_TAG, MPI_COMM_WORLD, &status);
-        printf("Slave %d received: '%s'\n",my_rank, slv_msg);
+        printf("Son %d wake up with: '%s'\n",my_rank, slv_msg);
 
         // ii. respondendo para iniciar processo de calculo
-        char ok_msg[50] = "Ok, master!";
-        printf("Slave %d is sending confirmation...\n",my_rank);
+        char ok_msg[50] = "Ok, master... I mean, Mommy!";
+        printf("Son %d is confirming...\n",my_rank);
         MPI_Send(ok_msg, 50, MPI_CHAR, src, HI_TAG, MPI_COMM_WORLD);
-        printf("Slave %d sent: '%s'\n",my_rank, ok_msg);
+        printf("Son %d said: '%s'\n",my_rank, ok_msg);
 
         // iii. recebendo a matriz para ordenacao
         int l[1], c[1];
-        printf("Slave %d is waiting for the matrix to sort...\n",my_rank);
+        printf("Son %d is waiting for the matrix to sort...\n",my_rank);
         MPI_Recv(l, 1, MPI_INT, src, LINE_TAG, MPI_COMM_WORLD, &status);
         MPI_Recv(c, 1, MPI_INT, src, COL_TAG, MPI_COMM_WORLD, &status);
 
-        double *buffer = NULL;
-        buffer = (double *)malloc((l[0]*c[0])*sizeof(double));
+        double buffer[(l[0]*c[0])];
         MPI_Recv(buffer, (l[0]*c[0]), MPI_DOUBLE, src, MATRIX_TAG, MPI_COMM_WORLD, &status);
-        printf("Slave %d received:\n| row = %d ; col = %d ; matrix = \n",my_rank, l[0],c[0]);
-        print_dmatrix(buffer,l[0],c[0]);
-        /*
+        printf("Son %d received:\n",my_rank);
+
+        // iv. ordenando a matriz por colunas
         ordena_colunas(buffer,l[0],c[0]);
-        printf("| Slave %d sorted the matrix.\n",my_rank);
-        print_dmatrix(buffer,l[0],c[0]);
+        printf("| Son %d sorted the matrix.\n",my_rank);
+
+        printf("Son %d is sending the sorted matrix to your master...\n",my_rank);
+        MPI_Ssend(buffer, (l[0]*c[0]), MPI_DOUBLE, src, MATRIX_TAG, MPI_COMM_WORLD);
         
-        calcula_media(matriz,media,lin,col);
-        printf("| Slave %d calculated the mean. Sending to master...\n",my_rank);
-        print_dvec(media,col);
-        //MPI_Send(media, 50, MPI_DOUBLE, root, my_rank, MPI_COMM_WORLD);
+        // v. calculando as medias das colunas
+        double mean[c[0]];
+        calcula_media(buffer,mean,l[0],c[0]);
+        printf("| Slave %d calculated and sent the mean. \n| | ",my_rank);
+        MPI_Send(mean, c[0], MPI_DOUBLE, src, MATRIX_TAG, MPI_COMM_WORLD);
+        print_dvec(mean,c[0]);
+        
+        double mh[c[0]];
+        calcula_media_harmonica(buffer,mh,l[0],c[0]);
+        printf("| Slave %d calculated and sent the harmonic mean. \n| | ",my_rank);
+        MPI_Send(mh, c[0], MPI_DOUBLE, src, MATRIX_TAG, MPI_COMM_WORLD);
+        print_dvec(mh,c[0]);
 
-        calcula_media_harmonica(matriz,media_har,lin,col);
-        calcula_mediana(matriz,mediana,lin,col);
-        calcula_moda(matriz,moda,lin,col);
+        double var[c[0]];
+        calcula_variancia(buffer,mean,var,l[0],c[0]);
+        printf("| Son %d calculated and sent the variance. \n| | ",my_rank);
+        MPI_Send(var, c[0], MPI_DOUBLE, src, MATRIX_TAG, MPI_COMM_WORLD);
+        print_dvec(var,c[0]);
 
-        calcula_variancia(matriz,media,variancia,lin,col);
-        calcula_desvio_padrao(variancia,dp,col);
-        calcula_coeficiente_variacao(media,dp,cv,col);*/
+        double stddev[c[0]];
+        calcula_desvio_padrao(var,stddev,c[0]);
+        printf("| Son %d calculated and sent the standard deviation. \n| | ",my_rank);
+        MPI_Send(stddev, c[0], MPI_DOUBLE, src, MATRIX_TAG, MPI_COMM_WORLD);
+        print_dvec(stddev,c[0]);
+
+        double varcoef[c[0]];
+        calcula_coeficiente_variacao(mean,stddev,varcoef,c[0]);
+        printf("| Slave %d calculated the mean. \n| | ",my_rank);
+        MPI_Send(varcoef, c[0], MPI_DOUBLE, src, MATRIX_TAG, MPI_COMM_WORLD);
+        print_dvec(varcoef,c[0]);
     }
     
     // 4. Desalocando a memoria utilizada
