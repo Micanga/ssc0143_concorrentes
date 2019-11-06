@@ -181,6 +181,31 @@ void calcula_coeficiente_variacao(double *media,double *dp,double *cv, int col)
     }  
 }
 
+void print_dvec(double *vec, int size){
+    int i;
+
+    for(i = 0; i < size ; i++){
+        printf("%lf ",vec[i]);
+    }
+    printf("\n");
+
+    return;
+}
+
+void print_dmatrix(double *matrix, int lin, int col){
+    int i, j;
+
+    for(i = 0; i < lin ; i++){
+        for(j = 0 ; j < col ; j++){
+            printf("%lf ",matrix[(i*lin) + j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+
+    return;
+}
+
 void print_result(double *media, double *media_har, double *mediana,
 	double *moda, double *variancia, double *dp, double *cv, int col){
 	int i = 0;
@@ -224,13 +249,13 @@ int main(int argc,char **argv){
     double *variancia = NULL, *dp = NULL, *cv = NULL;
 
     // b. variaveis mpi
-    void *buffer = NULL;
     int count, src, dst, rank, my_rank, n_proc, root;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &n_proc);
     MPI_Status status;
 
+    printf("Process %d of %d started.\n",my_rank,n_proc);
     // 1. Lendo o problema de entrada
     // a. numero de linhas e colunas da matriz de entrada
     fscanf(stdin, "%d %d\n", &lin, &col); 
@@ -248,7 +273,7 @@ int main(int argc,char **argv){
     // c. matriz de entrada
     for(i = 0; i < lin; i++)
         for(j = 0; j < col; j++)
-            fscanf(stdin, "%lf ",&(matriz[i*col+j]));
+            fscanf(stdin, "%lf ",&(matriz[(i*lin)+j]));
 
     // 2. Realizando os calculos solicitados
     src = root = 0;
@@ -266,6 +291,12 @@ int main(int argc,char **argv){
         MPI_Recv(mst_ans, 50, MPI_CHAR, MPI_ANY_SOURCE, dst, MPI_COMM_WORLD, &status);
         printf("Master received: '%s'\n",mst_ans);
 
+        // iii. enviando a matriz para ordenacao
+        printf("Master is sending the matrix to sort...\n");
+        MPI_Send(&lin, 1, MPI_INT, dst, my_rank, MPI_COMM_WORLD);
+        MPI_Send(&col, 1, MPI_INT, dst, my_rank, MPI_COMM_WORLD);
+        MPI_Send(matriz, (lin*col), MPI_DOUBLE, dst, my_rank, MPI_COMM_WORLD);
+
         /*for(rank = 1; rank < n_proc; rank++){
             // i. aguardando mensagem desbloquente para receber resposta
             MPI_Recv(buffer, 1, MPI_DOUBLE, MPI_ANY_SOURCE, rank, MPI_COMM_WORLD, &status);
@@ -275,9 +306,10 @@ int main(int argc,char **argv){
             src = status.MPI_SOURCE;
 
             // iii. montando resposta final
-            for(int i=0; i < count; i++)
-                vet[(src-1) + i * (n_proc-1)] = buffer[i];
         }*/
+
+        // iii. imprimindo os resultados obtidos
+        //print_result(media,media_har,mediana,moda,variancia,dp,cv,col);
     }
     // b. processos escravos
     else{
@@ -293,27 +325,35 @@ int main(int argc,char **argv){
         MPI_Send(ok_msg, 50, MPI_CHAR, root, my_rank, MPI_COMM_WORLD);
         printf("Slaves sent: '%s'\n",ok_msg);
 
-        /*if(rank == 1){
+        // iii. recebendo a matriz para ordenacao
+        int l[1], c[1];
+        printf("Slaves waiting for the matrix to sort...\n");
+        MPI_Recv(l, 1, MPI_INT, MPI_ANY_SOURCE, root, MPI_COMM_WORLD, &status);
+        MPI_Recv(c, 1, MPI_INT, MPI_ANY_SOURCE, root, MPI_COMM_WORLD, &status);
+
+        double buffer[l[0]*c[0]];
+        MPI_Recv(buffer, (l[0]*c[0]), MPI_DOUBLE, MPI_ANY_SOURCE, root, MPI_COMM_WORLD, &status);
+        printf("Slaves received:\n");
+        print_dmatrix(buffer,l[0],c[0]);
+
+        /*if(my_rank == 1){
             ordena_colunas(matriz,lin,col);
-
-            MPI_Send(vet, elem, MPI_FLOAT, 0, my_rank, MPI_COMM_WORLD);
+            printf("| Slave %d sorted the matrix.\n",my_rank);
         }
-        else{
-            MPI_Recv();
 
-            calcula_media(matriz,media,lin,col);
-            calcula_media_harmonica(matriz,media_har,lin,col);
-            calcula_mediana(matriz,mediana,lin,col);
-            calcula_moda(matriz,moda,lin,col);
+        calcula_media(matriz,media,lin,col);
+        printf("| Slave %d calculated the mean. Sending to master...\n",my_rank);
+        print_dvec(media,col);
+        //MPI_Send(media, 50, MPI_DOUBLE, root, my_rank, MPI_COMM_WORLD);
 
-            calcula_variancia(matriz,media,variancia,lin,col);
-            calcula_desvio_padrao(variancia,dp,col);
-            calcula_coeficiente_variacao(media,dp,cv,col);
-        }*/
+        calcula_media_harmonica(matriz,media_har,lin,col);
+        calcula_mediana(matriz,mediana,lin,col);
+        calcula_moda(matriz,moda,lin,col);
+
+        calcula_variancia(matriz,media,variancia,lin,col);
+        calcula_desvio_padrao(variancia,dp,col);
+        calcula_coeficiente_variacao(media,dp,cv,col);*/
     }
-
-    // 3. Imprimindo os resultados obtidos
-    //print_result(media,media_har,mediana,moda,variancia,dp,cv,col);
     
     // 4. Desalocando a memoria utilizada
     free(matriz); //Desaloca a matriz
